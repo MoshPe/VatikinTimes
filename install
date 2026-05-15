@@ -1,0 +1,1 @@
+pyinstaller --onefile --noconsole --hidden-import openpyxl.cell._writer main.py
