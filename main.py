@@ -817,7 +817,7 @@ class ZmanimApp(QWidget):
         for hebrew_name in zmanim_mapping.values():
             row_data = [hebrew_name, ""] + week_data[hebrew_name]
             ws.append(row_data)
-            ws.row_dimensions[current_row].height = 24
+            ws.row_dimensions[current_row].height = 36
 
             for col_idx in range(1, 10):
                 ws.cell(row=current_row, column=col_idx).font = default_font
