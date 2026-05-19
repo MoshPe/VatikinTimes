@@ -3,6 +3,7 @@ import sys
 import types
 import unittest
 from datetime import datetime
+from unittest import mock
 
 import openpyxl
 
@@ -31,6 +32,7 @@ except ModuleNotFoundError:
         "QLabel",
         "QComboBox",
         "QTextEdit",
+        "QSpinBox",
         "QPushButton",
         "QMessageBox",
     ):
@@ -156,6 +158,70 @@ class SpecialEventsTest(unittest.TestCase):
         ])
 
         self.assertGreaterEqual(height, 72)
+
+    def test_week_zmanim_calculates_alot_and_talit_from_visible_netz_offsets(self):
+        class DummyButton:
+            def setText(self, text):
+                pass
+
+        class DummySpinBox:
+            def __init__(self, value):
+                self._value = value
+
+            def value(self):
+                return self._value
+
+        class DummyResponse:
+            def __init__(self, payload, status_code=200):
+                self._payload = payload
+                self.status_code = status_code
+
+            def json(self):
+                return self._payload
+
+            def raise_for_status(self):
+                pass
+
+        def fake_get(url, params=None):
+            if url == "https://www.hebcal.com/hebcal":
+                return DummyResponse({"items": []})
+            if url == "https://www.hebcal.com/leyning":
+                return DummyResponse({"items": []})
+            if url.startswith("https://www.hebcal.com/converter"):
+                day = int(url.split("date=2026-05-")[1][:2]) - 15
+                return DummyResponse({
+                    "hebrew": f"יום {day}",
+                    "hy": 5786,
+                    "hm": "Iyyar",
+                    "hd": day,
+                })
+            if url.startswith("https://www.hebcal.com/zmanim"):
+                return DummyResponse({
+                    "times": {
+                        "alotHaShachar": "2026-05-16T03:00:00+03:00",
+                        "misheyakir": "2026-05-16T04:00:00+03:00",
+                        "sunrise": "2026-05-16T06:30:00+03:00",
+                    }
+                })
+            raise AssertionError(f"Unexpected URL: {url}")
+
+        app = main.ZmanimApp.__new__(main.ZmanimApp)
+        app.generate_btn = DummyButton()
+        app.chai_tables_cache = {
+            5786: {
+                "Iyyar": {day: "06:00:00" for day in range(1, 8)}
+            }
+        }
+        app.alot_offset_spin = DummySpinBox(72)
+        app.talit_tefillin_offset_spin = DummySpinBox(45)
+
+        with mock.patch.object(main.requests, "get", side_effect=fake_get), \
+                mock.patch.object(main.QApplication, "processEvents", return_value=None, create=True):
+            _, week_data, _, _, _, _, _, _ = app.fetch_week_zmanim("294801", "חיפה", "2026-05-16")
+
+        self.assertEqual(["04:48:00"] * 7, week_data["עלות השחר"])
+        self.assertEqual(["05:15:00"] * 7, week_data["זמן טלית ותפילין"])
+        self.assertEqual(["06:00:00"] * 7, week_data["הנץ החמה (הנראה)"])
 
     def test_export_writes_special_events_row_between_daf_yomi_and_comments(self):
         week_data = {

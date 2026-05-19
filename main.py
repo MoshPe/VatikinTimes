@@ -10,7 +10,7 @@ from openpyxl.styles import Font, Alignment
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.properties import PageSetupProperties
 from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
-                             QLabel, QComboBox, QTextEdit, QPushButton, QMessageBox)
+                             QLabel, QComboBox, QTextEdit, QSpinBox, QPushButton, QMessageBox)
 from PyQt6.QtCore import Qt
 
 
@@ -46,6 +46,11 @@ class ZmanimApp(QWidget):
     HEBREW_HAFTARA_OPENINGS = {
         ("I Samuel", "20:18"): "ויאמר לו יהונתן",
     }
+    ALOT_HASHACHAR_LABEL = "עלות השחר"
+    TALIT_TEFILLIN_LABEL = "זמן טלית ותפילין"
+    VISIBLE_NETZ_LABEL = "הנץ החמה (הנראה)"
+    DEFAULT_ALOT_OFFSET_MINUTES = 72
+    DEFAULT_TALIT_TEFILLIN_OFFSET_MINUTES = 45
 
     def __init__(self):
         super().__init__()
@@ -90,7 +95,31 @@ class ZmanimApp(QWidget):
         parasha_layout.addWidget(self.parasha_dropdown)
         layout.addLayout(parasha_layout)
 
-        # 3. Comments Section
+        # 3. Zman Offset Configuration
+        offset_layout = QVBoxLayout()
+        alot_offset_layout = QHBoxLayout()
+        alot_offset_label = QLabel("עלות השחר - דקות לפני הנץ:")
+        alot_offset_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.alot_offset_spin = QSpinBox()
+        self.alot_offset_spin.setRange(0, 180)
+        self.alot_offset_spin.setValue(self.DEFAULT_ALOT_OFFSET_MINUTES)
+
+        talit_tefillin_offset_layout = QHBoxLayout()
+        talit_tefillin_offset_label = QLabel("טלית ותפילין - דקות לפני הנץ:")
+        talit_tefillin_offset_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        self.talit_tefillin_offset_spin = QSpinBox()
+        self.talit_tefillin_offset_spin.setRange(0, 180)
+        self.talit_tefillin_offset_spin.setValue(self.DEFAULT_TALIT_TEFILLIN_OFFSET_MINUTES)
+
+        alot_offset_layout.addWidget(alot_offset_label)
+        alot_offset_layout.addWidget(self.alot_offset_spin)
+        talit_tefillin_offset_layout.addWidget(talit_tefillin_offset_label)
+        talit_tefillin_offset_layout.addWidget(self.talit_tefillin_offset_spin)
+        offset_layout.addLayout(alot_offset_layout)
+        offset_layout.addLayout(talit_tefillin_offset_layout)
+        layout.addLayout(offset_layout)
+
+        # 4. Comments Section
         comments_label = QLabel("הערות ללוח (יופיעו בתחתית):")
         comments_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         layout.addWidget(comments_label)
@@ -99,7 +128,7 @@ class ZmanimApp(QWidget):
         self.comments_text.setPlaceholderText("הקלד הערות כאן...")
         layout.addWidget(self.comments_text)
 
-        # 4. Action Button
+        # 5. Action Button
         self.generate_btn = QPushButton("עדכן והכן להדפסה")
         self.generate_btn.setStyleSheet("""
             QPushButton {
@@ -275,6 +304,27 @@ class ZmanimApp(QWidget):
             "i": "on",
             "lg": "he",
         }
+
+    @staticmethod
+    def parse_hebcal_time(time_iso):
+        time_str = time_iso.split('+')[0]
+        dt_obj = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
+        return dt_obj.strftime("%H:%M:%S")
+
+    @staticmethod
+    def time_before(time_str, minutes_before):
+        if not time_str or time_str == "--:--:--":
+            return "--:--:--"
+
+        dt_obj = datetime.strptime(time_str, "%H:%M:%S")
+        return (dt_obj - timedelta(minutes=int(minutes_before))).strftime("%H:%M:%S")
+
+    def configured_zman_offsets(self):
+        alot_spin = getattr(self, "alot_offset_spin", None)
+        talit_spin = getattr(self, "talit_tefillin_offset_spin", None)
+        alot_offset = alot_spin.value() if alot_spin is not None else self.DEFAULT_ALOT_OFFSET_MINUTES
+        talit_offset = talit_spin.value() if talit_spin is not None else self.DEFAULT_TALIT_TEFILLIN_OFFSET_MINUTES
+        return alot_offset, talit_offset
 
     @staticmethod
     def split_hebrew_year_from_dates(hebrew_dates):
@@ -581,9 +631,9 @@ class ZmanimApp(QWidget):
         start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
 
         zmanim_mapping = {
-            "alotHaShachar": "עלות השחר",
-            "misheyakir": "זמן טלית ותפילין",
-            "sunrise": "הנץ החמה (הנראה)"
+            "alotHaShachar": self.ALOT_HASHACHAR_LABEL,
+            "misheyakir": self.TALIT_TEFILLIN_LABEL,
+            "sunrise": self.VISIBLE_NETZ_LABEL
         }
 
         week_data = {hebrew_name: [] for hebrew_name in zmanim_mapping.values()}
@@ -670,18 +720,17 @@ class ZmanimApp(QWidget):
                 zmanim_data = zmanim_response.json()
                 times = zmanim_data.get("times", {})
 
-                for key, hebrew_name in zmanim_mapping.items():
-                    # HYBRID INJECTION: If we are looking for Netz AND Chai Tables has a time for today, inject it!
-                    if hebrew_name == "הנץ החמה (הנראה)" and chai_netz:
-                        week_data[hebrew_name].append(chai_netz)
-                    # Otherwise, use standard Hebcal parsed time
-                    elif key in times:
-                        time_iso = times[key]
-                        time_str = time_iso.split('+')[0]
-                        dt_obj = datetime.strptime(time_str, "%Y-%m-%dT%H:%M:%S")
-                        week_data[hebrew_name].append(dt_obj.strftime("%H:%M:%S"))
-                    else:
-                        week_data[hebrew_name].append("--:--:--")
+                if chai_netz:
+                    visible_netz = chai_netz
+                elif "sunrise" in times:
+                    visible_netz = self.parse_hebcal_time(times["sunrise"])
+                else:
+                    visible_netz = "--:--:--"
+
+                alot_offset, talit_offset = self.configured_zman_offsets()
+                week_data[self.ALOT_HASHACHAR_LABEL].append(self.time_before(visible_netz, alot_offset))
+                week_data[self.TALIT_TEFILLIN_LABEL].append(self.time_before(visible_netz, talit_offset))
+                week_data[self.VISIBLE_NETZ_LABEL].append(visible_netz)
 
             return start_date, week_data, zmanim_mapping, hebrew_dates, daf_yomi_week, special_events_week, haftara, yom_tov_week
 
@@ -833,7 +882,7 @@ class ZmanimApp(QWidget):
             current_row += 2
 
         vatikin_times = []
-        netz_times = week_data.get("הנץ החמה (הנראה)", ["--:--:--"] * 7)
+        netz_times = week_data.get(ZmanimApp.VISIBLE_NETZ_LABEL, ["--:--:--"] * 7)
         if yom_tov_week is None:
             yom_tov_week = [False] * 7
 
