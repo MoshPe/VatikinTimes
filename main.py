@@ -442,6 +442,14 @@ class ZmanimApp(QWidget):
             return item["haftara_start"]
 
         haft = item.get("haft", {})
+        if isinstance(haft, list):
+            haft = next(
+                (
+                    segment for segment in haft
+                    if isinstance(segment, dict) and segment.get("k") and segment.get("b")
+                ),
+                {},
+            )
         if not (haft.get("k") and haft.get("b")):
             return ""
 
@@ -464,8 +472,21 @@ class ZmanimApp(QWidget):
                 continue
 
             haft = item.get("haft", {})
-            if haft.get("k") and haft.get("b") and haft.get("e"):
-                haftara = cls.format_hebrew_tanach_ref(haft["k"], haft["b"], haft["e"])
+            haft_segments = []
+            if isinstance(haft, dict):
+                haft_segments = [haft]
+            elif isinstance(haft, list):
+                haft_segments = [segment for segment in haft if isinstance(segment, dict)]
+
+            valid_haft_segments = [
+                segment for segment in haft_segments
+                if segment.get("k") and segment.get("b") and segment.get("e")
+            ]
+            if valid_haft_segments:
+                haftara = ", ".join(
+                    cls.format_hebrew_tanach_ref(segment["k"], segment["b"], segment["e"])
+                    for segment in valid_haft_segments
+                )
                 opening = cls.extract_haftara_opening_for_item(item, include_opening_lookup)
                 if opening:
                     return f"{haftara} - {opening}"

@@ -143,6 +143,28 @@ class SpecialEventsTest(unittest.TestCase):
 
         self.assertEqual("שמואל א׳ פרק כ׳ פסוקים י״ח-מ״ב - ויאמר לו יהונתן", haftara)
 
+    def test_haftara_handles_split_hebcal_ranges(self):
+        items = [
+            {
+                "date": "2026-07-11",
+                "haftara": "Jeremiah 2:4-28, 3:4",
+                "haft": [
+                    {"k": "Jeremiah", "b": "2:4", "e": "2:28", "v": 25},
+                    {"k": "Jeremiah", "b": "3:4", "e": "3:4", "v": 1},
+                ],
+            },
+        ]
+
+        haftara = main.ZmanimApp.extract_haftara_for_date(items, "2026-07-11")
+
+        self.assertEqual(
+            (
+                f"{main.ZmanimApp.format_hebrew_tanach_ref('Jeremiah', '2:4', '2:28')}, "
+                f"{main.ZmanimApp.format_hebrew_tanach_ref('Jeremiah', '3:4', '3:4')}"
+            ),
+            haftara,
+        )
+
     def test_hebrew_opening_words_are_extracted_without_vowels_or_trope(self):
         verse = "וַיֹּאמֶר־ל֥וֹ יְהוֹנָתָ֖ן מָחָ֣ר חֹ֑דֶשׁ"
 
